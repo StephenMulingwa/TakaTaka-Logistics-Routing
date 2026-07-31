@@ -505,6 +505,7 @@ def send_orders_and_create_route(token, resource_id, unit_id, vehicle_name, df_g
                         "itemId": int(resource_id),
                         "orders": route_orders,
                         "uid": route_id,
+                        "routeId": route_id,
                         "callMode": "create",
                         "exp": 0,
                         "f": 0,
