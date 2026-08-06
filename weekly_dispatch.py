@@ -205,6 +205,11 @@ def read_assets(assets_file):
     return out[["asset_name", "asset_norm", "itemid", "asset_label"]]
 
 
+def _is_order_capacity_error(message: str) -> bool:
+    text = str(message or "")
+    return "UNKNOWN_ORDER_GET_ERROR" in text or "ORDER_INCOMPATIBLE_ROUTE_ID" in text
+
+
 def send_orders_and_create_route(token, resource_id, unit_id, vehicle_name, orders_df, tf, tt, warehouse_choice):
     try:
         import math
@@ -416,17 +421,39 @@ def send_orders_and_create_route(token, resource_id, unit_id, vehicle_name, orde
             "sid": session_id,
         }
 
-        route_result = requests.post(base_url, data=batch_payload, timeout=90).json()
-        if isinstance(route_result, list):
-            first = route_result[0]
-            if isinstance(first, dict) and first.get("error", 0) == 0:
+        def _post_route():
+            route_result = requests.post(base_url, data=batch_payload, timeout=90).json()
+            if isinstance(route_result, list):
+                first = route_result[0]
+                if isinstance(first, dict) and first.get("error", 0) == 0:
+                    planning_url = f"https://apps.wialon.com/logistics/?lang=en&sid={session_id}#/distrib/step3"
+                    return {"error": 0, "message": "Route created successfully", "planning_url": planning_url}
+                return {"error": first.get("error", 1), "message": first.get("reason", "Unknown error")}
+            if isinstance(route_result, dict) and route_result.get("error", 0) == 0:
                 planning_url = f"https://apps.wialon.com/logistics/?lang=en&sid={session_id}#/distrib/step3"
                 return {"error": 0, "message": "Route created successfully", "planning_url": planning_url}
-            return {"error": first.get("error", 1), "message": first.get("reason", "Unknown error")}
-        if isinstance(route_result, dict) and route_result.get("error", 0) == 0:
-            planning_url = f"https://apps.wialon.com/logistics/?lang=en&sid={session_id}#/distrib/step3"
-            return {"error": 0, "message": "Route created successfully", "planning_url": planning_url}
-        return {"error": 1, "message": f"Route creation failed: {route_result}"}
+            return {"error": 1, "message": f"Route creation failed: {route_result}"}
+
+        result = _post_route()
+        if result.get("error") and _is_order_capacity_error(result.get("message", "")):
+            try:
+                from services.wialon_cleanup import ensure_order_capacity
+
+                cleared = ensure_order_capacity(
+                    base_url,
+                    session_id,
+                    int(resource_id),
+                    slots_needed=len(route_orders) + 200,
+                )
+                if cleared:
+                    result = _post_route()
+                    if result.get("error") == 0:
+                        result["message"] = (
+                            f"Route created successfully after clearing {cleared} old order(s)."
+                        )
+            except Exception:
+                pass
+        return result
     except Exception as e:
         return {"error": 1, "message": str(e)}
 
