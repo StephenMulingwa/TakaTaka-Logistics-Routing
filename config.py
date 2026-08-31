@@ -6,9 +6,13 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent
-# Local: .env then .env.local (Vercel CLI). Production: Vercel injects process env.
+_ON_VERCEL = os.getenv("VERCEL") == "1"
+
+
 def _load_env_files() -> None:
-    """Load env files; local .env wins over .env.local (Vercel pull placeholders)."""
+    """Load local env files only; never override Vercel-injected process env."""
+    if _ON_VERCEL:
+        return
     local = BASE_DIR / ".env.local"
     env = BASE_DIR / ".env"
     if local.is_file():
@@ -31,13 +35,22 @@ _REQUIRED = (
 
 
 def _require(name: str) -> str:
-    value = os.getenv(name, "").strip()
-    if not value:
+    value = os.getenv(name, "").strip().strip('"').strip("'")
+    if not value or value == "[SENSITIVE]":
         raise RuntimeError(
             f"Missing required environment variable: {name}. "
-            f"Copy .env.example to .env and set all values."
+            f"Set it in Vercel Project Settings or copy .env.example to .env."
         )
     return value
+
+
+def _parse_resource_id(raw: str) -> int:
+    try:
+        return int(raw.strip().strip('"').strip("'"))
+    except ValueError:
+        raise RuntimeError(
+            f"WIALON_RESOURCE_ID must be an integer, got: {raw!r}"
+        )
 
 
 class Config:
@@ -46,7 +59,7 @@ class Config:
         self.APP_USERNAME = _require("APP_USERNAME")
         self.APP_PASSWORD = _require("APP_PASSWORD")
         self.WIALON_TOKEN = _require("WIALON_TOKEN")
-        self.WIALON_RESOURCE_ID = int(_require("WIALON_RESOURCE_ID"))
+        self.WIALON_RESOURCE_ID = _parse_resource_id(_require("WIALON_RESOURCE_ID"))
         self.MAX_CONTENT_LENGTH = 32 * 1024 * 1024
         self.CONTROLTECH_URL = os.getenv(
             "CONTROLTECH_URL", "https://www.controltech-ea.com/"
@@ -57,14 +70,16 @@ config = Config()
 
 
 def get_auth_credentials():
-    """Read current login credentials from env (reloaded on each login check)."""
+    """Return login credentials from env (Vercel) or reloaded local .env."""
+    if _ON_VERCEL:
+        return config.APP_USERNAME, config.APP_PASSWORD
     _load_env_files()
-    username = os.getenv("APP_USERNAME", "").strip()
-    password = os.getenv("APP_PASSWORD", "").strip()
-    if username == "[SENSITIVE]":
-        username = ""
-    if password == "[SENSITIVE]":
-        password = ""
+    username = os.getenv("APP_USERNAME", "").strip().strip('"').strip("'")
+    password = os.getenv("APP_PASSWORD", "").strip().strip('"').strip("'")
+    if username in ("", "[SENSITIVE]"):
+        username = config.APP_USERNAME
+    if password in ("", "[SENSITIVE]"):
+        password = config.APP_PASSWORD
     return username, password
 
 
