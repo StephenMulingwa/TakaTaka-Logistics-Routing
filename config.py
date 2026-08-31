@@ -7,16 +7,17 @@ from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent
 # Local: .env then .env.local (Vercel CLI). Production: Vercel injects process env.
-_ENV_FILES = (BASE_DIR / ".env", BASE_DIR / ".env.local")
+def _load_env_files() -> None:
+    """Load env files; local .env wins over .env.local (Vercel pull placeholders)."""
+    local = BASE_DIR / ".env.local"
+    env = BASE_DIR / ".env"
+    if local.is_file():
+        load_dotenv(local, override=False)
+    if env.is_file():
+        load_dotenv(env, override=True)
 
 
-def _load_env_files(override: bool = False) -> None:
-    for path in _ENV_FILES:
-        if path.is_file():
-            load_dotenv(path, override=override)
-
-
-_load_env_files(override=False)
+_load_env_files()
 
 __all__ = ["BASE_DIR", "config", "Config"]
 
@@ -57,11 +58,14 @@ config = Config()
 
 def get_auth_credentials():
     """Read current login credentials from env (reloaded on each login check)."""
-    _load_env_files(override=True)
-    return (
-        os.getenv("APP_USERNAME", "").strip(),
-        os.getenv("APP_PASSWORD", "").strip(),
-    )
+    _load_env_files()
+    username = os.getenv("APP_USERNAME", "").strip()
+    password = os.getenv("APP_PASSWORD", "").strip()
+    if username == "[SENSITIVE]":
+        username = ""
+    if password == "[SENSITIVE]":
+        password = ""
+    return username, password
 
 
 def auth_session_key() -> str:
