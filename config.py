@@ -1,3 +1,4 @@
+import hashlib
 import os
 import secrets
 from pathlib import Path
@@ -5,8 +6,17 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent
-# Vercel injects env vars directly; .env is for local dev only.
-load_dotenv(BASE_DIR / ".env", override=False)
+# Local: .env then .env.local (Vercel CLI). Production: Vercel injects process env.
+_ENV_FILES = (BASE_DIR / ".env", BASE_DIR / ".env.local")
+
+
+def _load_env_files(override: bool = False) -> None:
+    for path in _ENV_FILES:
+        if path.is_file():
+            load_dotenv(path, override=override)
+
+
+_load_env_files(override=False)
 
 __all__ = ["BASE_DIR", "config", "Config"]
 
@@ -46,15 +56,19 @@ config = Config()
 
 
 def get_auth_credentials():
-    """Re-read env (local .env or Vercel-injected vars) for login checks."""
-    load_dotenv(BASE_DIR / ".env", override=True)
-    username = os.getenv("APP_USERNAME", "").strip()
-    password = os.getenv("APP_PASSWORD", "").strip()
-    if not username:
-        username = config.APP_USERNAME
-    if not password:
-        password = config.APP_PASSWORD
-    return username, password
+    """Read current login credentials from env (reloaded on each login check)."""
+    _load_env_files(override=True)
+    return (
+        os.getenv("APP_USERNAME", "").strip(),
+        os.getenv("APP_PASSWORD", "").strip(),
+    )
+
+
+def auth_session_key() -> str:
+    """Fingerprint of current credentials; changes when username/password change."""
+    username, password = get_auth_credentials()
+    payload = f"{username}\0{password}".encode()
+    return hashlib.sha256(payload).hexdigest()
 
 
 def verify_login(username: str, password: str) -> bool:
