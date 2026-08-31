@@ -46,12 +46,15 @@ config = Config()
 
 
 def get_auth_credentials():
-    """Re-read .env so login works after credential changes without restarting."""
+    """Re-read env (local .env or Vercel-injected vars) for login checks."""
     load_dotenv(BASE_DIR / ".env", override=True)
-    return (
-        os.getenv("APP_USERNAME", "").strip(),
-        os.getenv("APP_PASSWORD", "").strip(),
-    )
+    username = os.getenv("APP_USERNAME", "").strip()
+    password = os.getenv("APP_PASSWORD", "").strip()
+    if not username:
+        username = config.APP_USERNAME
+    if not password:
+        password = config.APP_PASSWORD
+    return username, password
 
 
 def verify_login(username: str, password: str) -> bool:
