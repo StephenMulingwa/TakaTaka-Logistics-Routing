@@ -14,6 +14,7 @@ import streamlit as st
 
 WAREHOUSES = {
     "TTS": {"lat": -1.1404981978961632, "lon": 36.733312587683756},
+    "Rubis Banana": {"lat": -1.1747329246654616, "lon": 36.758819701449724},
 }
 
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -202,6 +203,11 @@ def read_assets(assets_file):
     out["asset_label"] = out["asset_name"] + " (ID: " + out["itemid"].astype(str) + ")"
     out["asset_norm"] = out["asset_name"].apply(normalize_plate)
     return out[["asset_name", "asset_norm", "itemid", "asset_label"]]
+
+
+def _is_order_capacity_error(message: str) -> bool:
+    text = str(message or "")
+    return "UNKNOWN_ORDER_GET_ERROR" in text or "ORDER_INCOMPATIBLE_ROUTE_ID" in text
 
 
 def send_orders_and_create_route(token, resource_id, unit_id, vehicle_name, orders_df, tf, tt, warehouse_choice):
@@ -393,6 +399,7 @@ def send_orders_and_create_route(token, resource_id, unit_id, vehicle_name, orde
                                 "itemId": int(resource_id),
                                 "orders": route_orders,
                                 "uid": route_id,
+                                "routeId": route_id,
                                 "callMode": "create",
                                 "exp": 0,
                                 "f": 0,
@@ -414,17 +421,39 @@ def send_orders_and_create_route(token, resource_id, unit_id, vehicle_name, orde
             "sid": session_id,
         }
 
-        route_result = requests.post(base_url, data=batch_payload, timeout=90).json()
-        if isinstance(route_result, list):
-            first = route_result[0]
-            if isinstance(first, dict) and first.get("error", 0) == 0:
+        def _post_route():
+            route_result = requests.post(base_url, data=batch_payload, timeout=90).json()
+            if isinstance(route_result, list):
+                first = route_result[0]
+                if isinstance(first, dict) and first.get("error", 0) == 0:
+                    planning_url = f"https://apps.wialon.com/logistics/?lang=en&sid={session_id}#/distrib/step3"
+                    return {"error": 0, "message": "Route created successfully", "planning_url": planning_url}
+                return {"error": first.get("error", 1), "message": first.get("reason", "Unknown error")}
+            if isinstance(route_result, dict) and route_result.get("error", 0) == 0:
                 planning_url = f"https://apps.wialon.com/logistics/?lang=en&sid={session_id}#/distrib/step3"
                 return {"error": 0, "message": "Route created successfully", "planning_url": planning_url}
-            return {"error": first.get("error", 1), "message": first.get("reason", "Unknown error")}
-        if isinstance(route_result, dict) and route_result.get("error", 0) == 0:
-            planning_url = f"https://apps.wialon.com/logistics/?lang=en&sid={session_id}#/distrib/step3"
-            return {"error": 0, "message": "Route created successfully", "planning_url": planning_url}
-        return {"error": 1, "message": f"Route creation failed: {route_result}"}
+            return {"error": 1, "message": f"Route creation failed: {route_result}"}
+
+        result = _post_route()
+        if result.get("error") and _is_order_capacity_error(result.get("message", "")):
+            try:
+                from services.wialon_cleanup import ensure_order_capacity
+
+                cleared = ensure_order_capacity(
+                    base_url,
+                    session_id,
+                    int(resource_id),
+                    slots_needed=len(route_orders) + 200,
+                )
+                if cleared:
+                    result = _post_route()
+                    if result.get("error") == 0:
+                        result["message"] = (
+                            f"Route created successfully after clearing {cleared} old order(s)."
+                        )
+            except Exception:
+                pass
+        return result
     except Exception as e:
         return {"error": 1, "message": str(e)}
 

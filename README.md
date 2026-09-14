@@ -27,7 +27,7 @@ Open http://127.0.0.1:5000
 | `WIALON_TOKEN` | Wialon API token (server-side only) |
 | `WIALON_RESOURCE_ID` | Wialon resource ID |
 
-Copy `.env.example` to `.env` for local development. Never commit `.env`.
+Copy `.env.example` to `.env` for local development, or run `vercel env pull .env.local` and copy values into `.env`. Never commit `.env`, `.env.local`, or `.env.development.local`.
 
 ## Deploy to Vercel
 

@@ -14,7 +14,7 @@ import re
 # =============================
 WAREHOUSES = {
     "TTS": {"lat": -1.1404981978961632, "lon": 36.733312587683756},
-    #"STO": {"lat": -1.3029821367535646, "lon": 36.865574991037754},
+    "Rubis Banana": {"lat": -1.1747329246654616, "lon": 36.758819701449724},
 }
 
 # =============================
@@ -399,6 +399,7 @@ def send_orders_and_create_route(token, resource_id, unit_id, vehicle_name, df_g
                         "itemId": int(resource_id),
                         "orders": route_orders,
                         "uid": route_id,
+                        "routeId": route_id,
                         "callMode": "create",
                         "exp": 0,
                         "f": 0,

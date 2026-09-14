@@ -12,7 +12,7 @@ from flask import (
     url_for,
 )
 
-from config import BASE_DIR, config, verify_login
+from config import BASE_DIR, auth_session_key, config, verify_login
 from services import common
 
 app = Flask(__name__)
@@ -33,6 +33,9 @@ def login_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
         if not session.get("logged_in"):
+            return redirect(url_for("login"))
+        if session.get("auth_key") != auth_session_key():
+            session.clear()
             return redirect(url_for("login"))
         return view(*args, **kwargs)
 
@@ -117,6 +120,7 @@ def login():
             session.clear()
             session["logged_in"] = True
             session["username"] = username.strip()
+            session["auth_key"] = auth_session_key()
             return redirect(url_for("dashboard"))
         error = "Invalid username or password."
 
